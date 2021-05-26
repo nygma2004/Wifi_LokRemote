@@ -1,4 +1,4 @@
-# ESP32 Wifi LocoRemote
+# ESP32 Wifi LokRemote
 This project is a wifi controller for large scale garden railway locomotives. It uses a ESP32 microcontroller to generate a webpage so you can control your loco on from your smartphone, or tablet. This provides and cheaper entry into battery control by not having to purchase a separate transmitter. And of course you are welcome to modify the code for your own scenario.
 ## Main Features
 - Wifi microcontroller generates its own wifi network, or connects to yout home wifi network and hosts the webpage control your loco
