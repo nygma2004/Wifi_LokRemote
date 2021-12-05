@@ -23,6 +23,10 @@ You can also check out my introductory video on this project, which goes through
 V1.0
 - Access Point mode is not implemented yet
 - Implement multi language support
+
+V1.1
+- Acces Point mode implemented
+
 ## Hardware
 The controller is build on a custom PCB that you can order from PCBWay: https://www.pcbway.com/project/shareproject/ESP32_Wifi_LocoRemote.html.
 The components used was mostly purchased from Aliexpress, small components like resistors were purchased from local shop.
