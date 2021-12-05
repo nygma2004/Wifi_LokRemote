@@ -233,6 +233,9 @@ function getStatus() {
         } else {
           document.getElementById("shuttlediv").style.display = "none";
         }
+        if (myarr.sabertooth = 1) {
+          document.getElementById("sabertooth").innerHTML = "M1: "+myarr.m1current+" A, "+myarr.m1temp+ " C | M2: "+myarr.m2current+" A, "+myarr.m2temp+" C";
+        }
       }
     };
     xhttp.open("GET", "status", true);
@@ -360,7 +363,7 @@ function LoadSettings() {
       <p><button onclick="Shuttle()" class="button_active" id="shuttlebutton">Shuttle</button></p>
       <p class="battery">Battery: <span id="battery"></span></p>
       <p class="smaller">Wifi LocoRemote  v1.0 | <a href="mailto:csongor.varga@gmail.com">email me</a> | <a href="https://github.com/nygma2004/marklin_can_wifi">GitHub</a></p>
-      <p class="smaller">Debug | Uptime: <span id="uptime"></span> | Direction: <span id="direction"></span> | Speed: <span id="speed"></span> | Target speed: <span id="targetspeed"></span> | Reply: <span id="reply"></span></p>
+      <p class="smaller">Debug | Uptime: <span id="uptime"></span> | Direction: <span id="direction"></span> | Speed: <span id="speed"></span> | Target speed: <span id="targetspeed"></span> | Sabertooth: <span id="sabertooth"></span> | Reply: <span id="reply"></span></p>
       <p><a href="/config">Settings</a></p>
     </td>
   </tr>

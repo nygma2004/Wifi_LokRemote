@@ -16,17 +16,11 @@
 // D25: LRC
 // D22: DIN
 //--------------------------------
-#include <ESP32CAN.h>
+
 #include <WiFi.h>
 #include <WebServer.h>
-#include <ESPmDNS.h>
+#include "WiFiUdp.h"
 #include "SPIFFS.h"
-
-#include "webpage.h" //Our HTML webpage contents with javascripts
-#include "configpage.h" //configuration webpage
-#include "settings.h"
-#include "globals.h"
-//#include <jled.h>
 #include <ArduinoJson.h>
 
 #include "AudioFileSourceSPIFFS.h"
@@ -34,12 +28,21 @@
 #include "AudioGeneratorWAV.h"
 #include "AudioOutputI2SNoDAC.h"
 
+#include "webpage.h" //Our HTML webpage contents with javascripts
+#include "configpage.h" //configuration webpage
+#include "settings.h"
+#include "globals.h"
+
 // These lines were required for the second task to hit the watchdog timer properly
 // https://github.com/espressif/arduino-esp32/issues/595#issuecomment-423796631
 #include "soc/timer_group_struct.h"  
 #include "soc/timer_group_reg.h"
 
 WebServer server(80);                         // Web server
+WiFiUDP udp;
+
+
+
 
 TaskHandle_t AudioTask;
 
@@ -52,65 +55,64 @@ bool loadConfiguration(const char *filename, Config &config, String localjson) {
   // Allocate a temporary JsonDocument
   // Don't forget to change the capacity to match your requirements.
   // Use arduinojson.org/v6/assistant to compute the capacity.
-  StaticJsonDocument<800> doc;
+  StaticJsonDocument<1024> doc;
+  Serial.println("== Config Load ====");
   
   // Open file for reading
   File configfile = SPIFFS.open(filename);
-    
+
   if (localjson=="") {
   // Set config defaults before anything
-  strlcpy(config.loconame,"LocoRemote",64);
-  strlcpy(config.wifimode,"ap",10);
-  strlcpy(config.ssid,"LocoRemote",30);
-  strlcpy(config.password,"12345678",30);
-  config.acceleration = 100;
-  config.deceleration = 100;
-  config.minspeed = 135;
-  config.maxspeed = 255;
-  config.volume = 2;
-  strlcpy(config.audio1,"Bell",20);
-  strlcpy(config.audio2,"Whistle",20);
-  strlcpy(config.audio3,"Guard",20);
-  strlcpy(config.audio4,"Horn",20);
-  strlcpy(config.light3,"Cab",20);
-  strlcpy(config.light4,"Engine",20);
-  config.stationwait = 60;
-  config.blindtime = 30;
-  strlcpy(config.stationstopsound,"none",6);
-  strlcpy(config.stationleavesound1,"none",6);
-  strlcpy(config.stationleavesound2,"none",6);
-  strlcpy(config.terminusstopsound,"none",6);
-  strlcpy(config.terminusleavesound1,"none",6);
-  strlcpy(config.terminusleavesound2,"none",6);
-  strlcpy(config.input3sound,"none",6);
-  strlcpy(config.input4sound,"none",6);
+    Serial.println("== Building object");
+    strlcpy(config.loconame,"LocoRemote",64);
+    strlcpy(config.wifimode,"ap",10);
+    strlcpy(config.ssid,"LocoRemote",30);
+    strlcpy(config.password,"12345678",30);
+    config.acceleration = 100;
+    config.deceleration = 100;
+    config.minspeed = 135;
+    config.maxspeed = 255;
+    config.volume = 2;
+    strlcpy(config.audio1,"Bell",20);
+    strlcpy(config.audio2,"Whistle",20);
+    strlcpy(config.audio3,"Guard",20);
+    strlcpy(config.audio4,"Horn",20);
+    strlcpy(config.light3,"Cab",20);
+    strlcpy(config.light4,"Engine",20);
+    config.stationwait = 60;
+    config.blindtime = 30;
+    strlcpy(config.stationstopsound,"none",6);
+    strlcpy(config.stationleavesound1,"none",6);
+    strlcpy(config.stationleavesound2,"none",6);
+    strlcpy(config.terminusstopsound,"none",6);
+    strlcpy(config.terminusleavesound1,"none",6);
+    strlcpy(config.terminusleavesound2,"none",6);
+    strlcpy(config.input3sound,"none",6);
+    strlcpy(config.input4sound,"none",6);
   
 
   if(!configfile){
-      Serial.println("Failed to open file for reading");
+      Serial.println("== Failed to open file for reading");
       return false;
   }
-    
+    // Deserialize the JSON document
+    DeserializationError error = deserializeJson(doc, configfile);
+    if (error) {
+      Serial.print(F("== Failed to read the JSON configuration file: "));
+      Serial.println(error.f_str());   
+      return false;
+    }
 
-
-  // Deserialize the JSON document
-  DeserializationError error = deserializeJson(doc, configfile);
-  if (error) {
-    Serial.print(F("Failed to read the JSON configuration file: "));
-    Serial.println(error.f_str());   
-    return false;
-  }
-
-  Serial.println("----- Configuration file -----");
   } else {
     DeserializationError error = deserializeJson(doc, localjson.c_str());
     if (error) {
-      Serial.print(F("Failed to read the JSON data: "));
+      Serial.print(F("== Failed to read the JSON data: "));
       Serial.println(error.f_str());   
       return false; 
     }
   }
 
+  Serial.println("== Reading JSON object");
   // Copy values from the JsonDocument to the Config
   if (doc.containsKey("acceleration")) {
     config.acceleration = doc["acceleration"];
@@ -190,6 +192,7 @@ bool loadConfiguration(const char *filename, Config &config, String localjson) {
   }
   // Close the file (Curiously, File's destructor doesn't close the file)
   configfile.close();
+  Serial.println("== Config Done =====");
   return true;
 }
 
@@ -273,7 +276,7 @@ bool saveConfiguration(const char *filename, const Config &config) {
   // Allocate a temporary JsonDocument
   // Don't forget to change the capacity to match your requirements.
   // Use arduinojson.org/assistant to compute the capacity.
-  StaticJsonDocument<800> doc;
+  StaticJsonDocument<1024> doc;
 
   result = true;
 
@@ -393,10 +396,15 @@ void handleDirectionRequest() {
     direction = message.toInt();
     speed = 0;
     targetspeed = 0;
-    message = "Direction set to " + message + ", speed 0";    
-    ledcWrite(0, 0);
-    ledcWrite(1, 0);
+    message = "Direction set to " + message + ", speed 0";  
+
+      ledcWrite(0, 0);
+      ledcWrite(1, 0);
+
+    
     SetHeadLights();
+    
+
   }
   // Send dummy response
   Serial.println(message);
@@ -412,10 +420,14 @@ void setMotorSpeed() {
   }
   if (direction==0) {
     // going forward
-    ledcWrite(0, motorspeed);
+
+      ledcWrite(0, motorspeed);
+
   } else {
     // going backward
-    ledcWrite(1, motorspeed);
+
+      ledcWrite(1, motorspeed);
+
   }
 }
 
@@ -440,12 +452,15 @@ void handleStatusRequest() {
   message += stationwait;
   message += ", \"shuttlemode\": ";
   message += shuttlemode;
+
+  message += ", \"sabertooth\": 0";
+
   message += "}";
   server.send(200, "text/html", message);
 }
 
 // Central audio selection/playing routine
-void PlayWAV(const char* filename) {
+void PlayWAV(const char* filename, bool stop) {
   if (strcmp(filename,"slot1")==0) filename = "/01.wav";
   if (strcmp(filename,"slot2")==0) filename = "/02.wav";
   if (strcmp(filename,"slot3")==0) filename = "/03.wav";
@@ -456,8 +471,11 @@ void PlayWAV(const char* filename) {
   if (strcmp(filename,"slot8")==0) filename = "/08.wav";
 
   if (wav->isRunning()) {
-    wav->stop();
-    //delete file;
+    if (stop) {
+      wav->stop();
+    } else {
+      return;
+    }
   }
   Serial.print("Playing audio: ");
   Serial.println(filename);
@@ -477,16 +495,16 @@ void handleSoundRequest() {
     int sound = message.toInt();
     switch (sound) {
       case 0: 
-        PlayWAV("/01.wav");
+        PlayWAV("/01.wav", true);
         break;
       case 1: 
-        PlayWAV("/02.wav");
+        PlayWAV("/02.wav", true);
         break;
       case 2: 
-        PlayWAV("/03.wav");
+        PlayWAV("/03.wav", true);
         break;
       case 3: 
-        PlayWAV("/04.wav");
+        PlayWAV("/04.wav", true);
         break;
     }
     message = "Playing sound " + message;    
@@ -614,12 +632,15 @@ void setup() {
   pinMode(INPUT2, INPUT_PULLUP);
   pinMode(INPUT3, INPUT);
   pinMode(INPUT4, INPUT);
+
+
   ledcAttachPin(MOTORIN1,0);  // assign the speed control PWM pin to a channel
   ledcAttachPin(MOTORIN2,1);  // assign the speed control PWM pin to a channel
    
   // initialize channel 0-15, resolution 1-16 bit, frequency limit depend on resolution
   ledcSetup(0,PWMFREQ,8);  // channel- 0, frequency- 4000, Resolution bit- 8
   ledcSetup(1,PWMFREQ,8);  // channel- 0, frequency- 4000, Resolution bit- 8
+
    
   uptime = 0;
   msgcount = 0;
@@ -650,44 +671,46 @@ void setup() {
 
   delay(100);
   Serial.println();
-  Serial.print("Connecting to wifi network");
 
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    digitalWrite(BUILTIN_LED, uptime % 2 == 0);
-    uptime++;
-  }
-  uptime = 0;
-  digitalWrite(BUILTIN_LED, LOW);
-
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("Signal [RSSI]: ");
-  Serial.println(WiFi.RSSI());
-
-/*
-  // Set up mDNS responder:
-  // - first argument is the domain name, in this example
-  //   the fully-qualified domain name is "esp32.local"
-  // - second argument is the IP address to advertise
-  //   we send our IP address on the WiFi network
-  if (!MDNS.begin("locoremote")) {
-      Serial.println("Error setting up MDNS responder!");
-      while(1) {
-          delay(1000);
-      }
-  }
-  Serial.println("mDNS responder started");
-  // Add service to MDNS-SD
-  MDNS.addService("http", "tcp", 80);
-*/
+  // Configured for Station Mode
+  if (strcmp(config.wifimode,"sta")==0) {
+    Serial.print("Connecting to wifi network");
   
+    WiFi.begin(config.ssid, config.password);
+  
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+      digitalWrite(BUILTIN_LED, uptime % 2 == 0);
+      uptime++;
+    }
+    uptime = 0;
+    digitalWrite(BUILTIN_LED, LOW);
+  
+    Serial.println("");
+    Serial.print("Connected to ");
+    Serial.println(config.ssid);
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("Signal [RSSI]: ");
+    Serial.println(WiFi.RSSI());
+  }
+
+  // Configured for Access Point
+  if (strcmp(config.wifimode,"ap")==0) {
+    Serial.println("Setting up Access Point...");
+
+    WiFi.softAP(config.ssid, config.password);
+  
+    Serial.print("Access Point: ");
+    Serial.println(config.ssid);
+    IPAddress IP = WiFi.softAPIP();
+    Serial.print("AP IP address: ");
+    Serial.println(IP);
+    
+    server.begin();
+  }
+ 
   server.on("/", [](){                              // main page
      String s = webPage; //Read HTML contents
      server.send(200, "text/html", s); //Send web page
@@ -728,6 +751,13 @@ void setup() {
   attachInterrupt(INPUT3, Input3Handler, FALLING);
   attachInterrupt(INPUT4, Input4Handler, FALLING);
 
+  if (udp.begin(4444)) {
+    Serial.print("UDP running at IP: ");
+    Serial.print(WiFi.localIP());
+    Serial.println(" port: 4444");
+  }
+
+
 }
 
 // Audio thread handler which is responsible for keeping the audio buffer topped up when the audio is playing
@@ -763,7 +793,7 @@ void loop() {
   // this was required to keep the ISR short and not short dump due to WDT
   if (triggersound) {
     if (!wav->isRunning()) {
-      PlayWAV(startsound);
+      PlayWAV(startsound, true);
     }
     triggersound = false;
   }
@@ -794,7 +824,7 @@ void loop() {
       stationwait = config.stationwait;
       Serial.println("Stopped at a station");
       if (strcmp(config.stationstopsound,"none")!=0) {
-        PlayWAV(config.stationstopsound);
+        PlayWAV(config.stationstopsound, true);
       }
     }
   }
@@ -803,13 +833,13 @@ void loop() {
   if (drivemode==DRIVEMODE_STATIONSTOP) {
     // Time to play the sound 1
     if ((stationwait==10)&&(strcmp(config.stationleavesound1,"none")!=0)&&(!wav->isRunning())) {
-      PlayWAV(config.stationleavesound1);
+      PlayWAV(config.stationleavesound1, true);
     }
     // Time to leave the station
     if (stationwait==0) {
       // Play sound 2
       if (strcmp(config.stationleavesound2,"none")!=0) {
-        PlayWAV(config.stationleavesound2);
+        PlayWAV(config.stationleavesound2, true);
       }
       drivemode=DRIVEMODE_DRIVING;
       targetspeed = autospeed;
@@ -826,7 +856,7 @@ void loop() {
       stationwait = config.stationwait;
       Serial.println("Stopped at a terminus");
       if (strcmp(config.terminusstopsound,"none")!=0) {
-        PlayWAV(config.terminusstopsound);
+        PlayWAV(config.terminusstopsound, true);
       }
     }
   }
@@ -835,13 +865,13 @@ void loop() {
   if (drivemode==DRIVEMODE_TERMINUSSTOP) {
     // Time to play the sound 1
     if ((stationwait==10)&&(strcmp(config.terminusleavesound1,"none")!=0)&&(!wav->isRunning())) {
-      PlayWAV(config.terminusleavesound1);
+      PlayWAV(config.terminusleavesound1, true);
     }
     // Time to leave the terminus
     if (stationwait==0) {
       // Play sound 2
       if (strcmp(config.terminusleavesound2,"none")!=0) {
-        PlayWAV(config.terminusleavesound2);
+        PlayWAV(config.terminusleavesound2, true);
       }
       if (direction==0) {
         direction=1;
@@ -870,24 +900,26 @@ void loop() {
     if (sec%10==0) {
       refreshStats();  
     }
-    // Battery level check
-    battery = (float)analogRead(BATTERYMONITOR) / 4096 * 33 * 11111 / 11000 * 1.1;
 
-    //Battery average calculation - average the last 10 readings
-    if (battarrcount<BATTARRSIZE-1) {
-      battarr[battarrcount] = battery;
-      battarrcount++;
-    } else {
-      for(int i=1; i<BATTARRSIZE; i++) {
-        battarr[i-1]=battarr[i];
+      // Battery level check
+      battery = (float)analogRead(BATTERYMONITOR) / 4096 * 33 * 11111 / 11000 * 1.1;
+  
+      //Battery average calculation - average the last 10 readings
+      if (battarrcount<BATTARRSIZE-1) {
+        battarr[battarrcount] = battery;
+        battarrcount++;
+      } else {
+        for(int i=1; i<BATTARRSIZE; i++) {
+          battarr[i-1]=battarr[i];
+        }
+        battarr[BATTARRSIZE-1]=battery;
       }
-      battarr[BATTARRSIZE-1]=battery;
-    }
-    battery = 0;
-    for(int i=0; i<battarrcount; i++) {
-      battery += battarr[i];
-    }
-    battery = battery / battarrcount;
+      battery = 0;
+      for(int i=0; i<battarrcount; i++) {
+        battery += battarr[i];
+      }
+      battery = battery / battarrcount;
+
 
     // If we are waiting at the station, decrement the counter
     if (stationwait>0) {
@@ -899,10 +931,88 @@ void loop() {
     if (blindtime>0) blindtime--;
     
     // reconnect to the wifi network in station mode if connection is lost
-    if (config.wifimode=="sta")&&(WiFi.status() != WL_CONNECTED)) {
+    if ((config.wifimode=="sta")&&(WiFi.status() != WL_CONNECTED)) {
       Serial.println("Reconnecting to wifi...");
       WiFi.reconnect();
     }
   }   
+
+  // check if data is getting through UDP
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    UDPActive = true;
+    lastUDP = millis();
+    //Serial.print("UDP received: ");
+    //Serial.print(" Sender: ");
+    //Serial.print(udp.remoteIP());
+    //Serial.print(":");
+    //Serial.print(udp.remotePort());
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) {
+      packetBuffer[len] = 0;
+    }
+    //Serial.print(", Message lenght: ");
+    //Serial.print(len); 
+    //Serial.print(", Payload: ");
+    //Serial.write(packetBuffer, len);
+    //Serial.println();
+    if (motorspeed == 0) {
+      // only change the direction if the motor is stopped
+      direction = packetBuffer[0];
+    }
+    targetspeed = packetBuffer[1];
+    byte bits = packetBuffer[2];
+    if (lightState!=((bits & (1 << 7)) == (1 << 7))) {
+      lightState=((bits & (1 << 7)) == (1 << 7));
+      SetHeadLights();  
+    }
+    if (light3State!=((bits & (1 << 6)) == (1 << 6))) {
+      light3State=((bits & (1 << 6)) == (1 << 6));
+      digitalWrite(LIGHT3, light3State); 
+    }
+    if (light4State!=((bits & (1 << 5)) == (1 << 5))) {
+      light4State=((bits & (1 << 5)) == (1 << 5));
+      digitalWrite(LIGHT4, light4State); 
+    }
+    if (packetBuffer[3]>0) {
+      switch (packetBuffer[3]) {
+        case 1:
+          PlayWAV("slot1", false);
+          break;
+        case 2:
+          PlayWAV("slot2", false);
+          break;
+        case 3:
+          PlayWAV("slot3", false);
+          break;
+        case 4:
+          PlayWAV("slot4", false);
+          break;
+        case 5:
+          PlayWAV("slot5", false);
+          break;
+        case 6:
+          PlayWAV("slot6", false);
+          break;
+      }
+    }
+
+
+
+
+
+
+
+    byte statuspacket[10] = {(byte)((int)(battery*10)/256),(byte)((int)(battery*10)%256),(byte)((int)(abs(m1current)*10)/256),(byte)((int)(abs(m1current)*10)%256),m1temp,(byte)((int)(abs(m2current)*10)/256),(byte)((int)(abs(m2current)*10)%256),m2temp,0,0}; 
+    udp.beginPacket(udp.remoteIP(), 4445);  // udp.remotePort());
+    udp.write(statuspacket,10);
+    udp.endPacket();
+  }
+
+  //Stop the loco if the UDP messages time out
+  if (UDPActive && (millis()-lastUDP > UDP_TIMEOUT)) {
+    targetspeed = 0;
+  }
+
 
 }

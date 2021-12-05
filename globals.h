@@ -20,23 +20,25 @@
 #define DRIVEMODE_TERMINUSSTOP 4      // Shuttle mode: loco is stopped at the terminus and counting down the wait time
 
 #define BATTARRSIZE 10                // Array size for averaging the battery reading
+#define UDP_TIMEOUT 2000              // Stop the loco if UDP messages stop coming (2 sec)
 
 String webStat = "";
 String webMsg = "";
 
-unsigned long lastMinute, uptime, lastSecond, sec, msgcount, lastDisplay, lastSpeed, lastInput1, lastInput2, lastInput3, lastInput4;
+unsigned long lastMinute, uptime, lastSecond, sec, msgcount, lastDisplay, lastSpeed, lastInput1, lastInput2, lastInput3, lastInput4, lastSabertooth, lastUDP;
 byte direction = 0;
 byte speed = 0;
 byte targetspeed = 0;
 byte autospeed = 0;
 byte drivemode = 0;
 String configJSON;
-int motorspeed, stationwait, blindtime;
-bool lightState, light3State, light4State, input1State, input2State, shuttlemode;
-float battery;
+int motorspeed, stationwait, blindtime, m1temp, m2temp;
+bool lightState, light3State, light4State, input1State, input2State, shuttlemode, UDPActive;
+float battery, m1current, m2current;
 float battarr[BATTARRSIZE];
 byte battarrcount = 0;
 char startsound[6];
 bool triggersound = false;
+char packetBuffer[255]; //buffer to hold incoming packet
 
 //auto led_breathe = JLed(jled::Esp32Hal(LIGHT1,2)).Off();
