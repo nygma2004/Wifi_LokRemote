@@ -49,3 +49,6 @@ This side shows the microcontroller, the motor driver board and the sound amp bo
 
 And the order side has the mostfets for the outputs and buck converter to power the microcontroller:
 ![microcontroller side](/img/pcb3.jpg)
+
+Video demonstration of the PCB:
+[![PCB arrived](https://img.youtube.com/vi/ANlh9ZKmcRU/0.jpg)](https://www.youtube.com/watch?v=ANlh9ZKmcRU)
